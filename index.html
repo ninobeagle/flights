@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Customer Map</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height:100%; margin:0; }
+    .stats { position:absolute; top:10px; right:10px; z-index:1000; background:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 2px 6px rgba(0,0,0,.15); font:14px/1.3 system-ui,sans-serif; }
+    .stats b { display:inline-block; width:120px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="stats" id="statsBox">Loading…</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- SET THIS TO YOUR WEB APP BASE URL ---
+    const DATA_BASE_URL = "https://script.google.com/macros/s/AKfycbx.../exec";
+
+    // Read ?customer= from URL
+    const params = new URLSearchParams(location.search);
+    const CUSTOMER = (params.get('customer') || '').trim();
+    const DATA_URL = CUSTOMER ? `${DATA_BASE_URL}?customer=${encodeURIComponent(CUSTOMER)}` : DATA_BASE_URL;
+
+    // Map setup
+    const map = L.map('map').setView([51.3, 10.2], 6);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:18, attribution:'&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    function styleFeature(f) {
+      const p = f.properties || {};
+      const color = p.color || '#1f77b4';
+      if (p.type === 'grid') return { color, weight: 2, opacity: 0.35 };
+      if (p.type === 'route' && p.status === 'complete') return { color, weight: 3, opacity: 1 };
+      if (p.type === 'route' && p.status === 'incomplete') return { color: '#ff7f0e', weight: 3, opacity: 1 };
+      return { color: '#999', weight: 2, opacity: 0.6 };
+    }
+
+    function onEachFeature(f, layer) {
+      const p = f.properties || {};
+      layer.bindPopup(`
+        <b>${p.filename || 'Feature'}</b><br>
+        <b>Type:</b> ${p.type}<br>
+        <b>Customer:</b> ${p.customer}<br>
+        ${p.status ? `<b>Status:</b> ${p.status}<br>` : ''}
+        ${p.dist_km ? `<b>Distance:</b> ${p.dist_km} km` : ''}
+      `);
+    }
+
+    fetch(DATA_URL + '&t=' + Date.now())
+      .then(r => r.json())
+      .then(geojson => {
+        const layer = L.geoJSON(geojson, { style: styleFeature, onEachFeature }).addTo(map);
+        if (layer.getLayers().length > 0) {
+          map.fitBounds(layer.getBounds(), { padding:[20,20] });
+        }
+        const stats = geojson.stats || {};
+        document.getElementById('statsBox').innerHTML = `
+          <div><b>Grid total:</b> ${stats.grid_km||0} km</div>
+          <div><b>Flown:</b> ${stats.flown_km||0} km</div>
+          <div><b>To fly:</b> ${stats.remaining_km||0} km</div>
+          <div><b>Planned:</b> ${stats.planned_km||0} km</div>
+        `;
+      })
+      .catch(err => {
+        console.error('GeoJSON load error:', err);
+        document.getElementById('statsBox').textContent = 'Error loading data';
+      });
+  </script>
+</body>
+</html>
